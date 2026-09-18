@@ -245,21 +245,50 @@ function extractPalette(src, targetRowId, titleId, selectId) {
       ctx.drawImage(img, 0, 0, 40, 40);
       const data = ctx.getImageData(0, 0, 40, 40).data;
 
-      // Sample 5 colors across the cover
-      const coords = [[8, 8], [20, 10], [20, 20], [30, 28], [34, 34]];
-      const swatches = coords.map(([x, y]) => {
-        const idx = (y * 40 + x) * 4;
-        const r = data[idx], g = data[idx+1], b = data[idx+2];
+      // Cluster pixels into color bins to discover prominent tones
+      const bins = {};
+      for (let i = 0; i < data.length; i += 8) {
+        const r = Math.min(255, Math.round(data[i] / 24) * 24);
+        const g = Math.min(255, Math.round(data[i+1] / 24) * 24);
+        const b = Math.min(255, Math.round(data[i+2] / 24) * 24);
+        const key = `${r},${g},${b}`;
+        bins[key] = (bins[key] || 0) + 1;
+      }
+      let topColors = Object.entries(bins).sort((a, b) => b[1] - a[1]).slice(0, 10).map(x => x[0]);
+
+      // If fewer than 10 bins, sample spatially across the image to fill to 10
+      if (topColors.length < 10) {
+        const coords = [
+          [4,4],[12,6],[20,4],[28,6],[36,4],
+          [6,20],[14,20],[20,20],[26,20],[34,20],
+          [8,34],[16,34],[24,34],[32,34]
+        ];
+        coords.forEach(([x, y]) => {
+          if (topColors.length >= 10) return;
+          const idx = (y * 40 + x) * 4;
+          const c = `${data[idx]},${data[idx+1]},${data[idx+2]}`;
+          if (!topColors.includes(c)) topColors.push(c);
+        });
+      }
+
+      const swatches = topColors.map(rgbStr => {
+        const [r, g, b] = rgbStr.split(',').map(Number);
         const hex = "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-        return { rgb: `rgb(${r},${g},${b})`, hex: hex };
+        return { rgb: `rgb(${r},${g},${b})`, hex: hex, lum: 0.299 * r + 0.587 * g + 0.114 * b };
       });
+
+      // Sort by luminance for an aesthetically pleasing color progression
+      swatches.sort((a, b) => a.lum - b.lum);
 
       row.innerHTML = swatches.map(c => 
         `<div class="swatch" style="background-color: ${c.rgb};" title="${c.hex}"></div>`
       ).join('');
     } catch (e) {
       console.warn("Palette extraction fallback:", e);
-      const fallbackHex = ['#2b2d42', '#8d99ae', '#edf2f4', '#ef233c', '#d90429'];
+      const fallbackHex = [
+        '#0f172a', '#1e293b', '#334155', '#475569', '#64748b',
+        '#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9', '#f8fafc'
+      ];
       row.innerHTML = fallbackHex.map(hex => 
         `<div class="swatch" style="background-color: ${hex};" title="${hex}"></div>`
       ).join('');
@@ -268,7 +297,10 @@ function extractPalette(src, targetRowId, titleId, selectId) {
 
   img.onload = buildPalette;
   img.onerror = function() {
-    const fallbackHex = ['#1a1a2e', '#16213e', '#0f3460', '#e94560', '#53354a'];
+    const fallbackHex = [
+      '#111827', '#1f2937', '#374151', '#4b5563', '#6b7280',
+      '#9ca3af', '#d1d5db', '#e5e7eb', '#f3f4f6', '#ffffff'
+    ];
     row.innerHTML = fallbackHex.map(hex => 
       `<div class="swatch" style="background-color: ${hex};" title="${hex}"></div>`
     ).join('');
