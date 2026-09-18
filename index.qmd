@@ -1,7 +1,432 @@
 ---
-title: "y"
+title: "Album Cover Comparison"
+format:
+  html:
+    toc: false
 ---
 
-This is a Quarto website.
+```{r}
+#| echo: false
+#| message: false
+library(tidyverse)
 
-To learn more about Quarto websites visit <https://quarto.org/docs/websites>.
+# Scan all downloaded covers in data directory
+files <- list.files("data", pattern = "\\.jpg$") |> 
+  sort()
+
+# Format filename into clean readable label
+format_name <- \(x) {
+  x |> 
+    str_remove("\\.jpg$") |> 
+    str_replace_all("_", " ") |> 
+    str_to_title()
+}
+
+albums_df <- tibble(
+  file = files,
+  label = map_chr(files, format_name)
+)
+```
+
+Compare any two album covers to see their artistic similarities, composition differences, and color palettes.
+
+::: {.controls-card}
+::: {.selector-grid}
+::: {.select-group}
+<label for="selectA">Album Cover A</label>
+<select id="selectA" class="album-select">
+```{r}
+#| echo: false
+#| results: asis
+
+# Generate option tags for Album A
+default_a <- if ("the_beatles_abbey_road.jpg" %in% files) "the_beatles_abbey_road.jpg" else files[1]
+
+walk2(albums_df$file, albums_df$label, \(f, lbl) {
+  selected <- if (f == default_a) " selected" else ""
+  cat(sprintf('<option value="%s"%s>%s</option>\n', f, selected, lbl))
+})
+```
+</select>
+:::
+
+::: {.select-group}
+<label for="selectB">Album Cover B</label>
+<select id="selectB" class="album-select">
+```{r}
+#| echo: false
+#| results: asis
+
+# Generate option tags for Album B
+default_b <- if ("pink_floyd_the_dark_side_of_the_moon.jpg" %in% files) {
+  "pink_floyd_the_dark_side_of_the_moon.jpg"
+} else if (length(files) > 1) {
+  files[2]
+} else {
+  files[1]
+}
+
+walk2(albums_df$file, albums_df$label, \(f, lbl) {
+  selected <- if (f == default_b) " selected" else ""
+  cat(sprintf('<option value="%s"%s>%s</option>\n', f, selected, lbl))
+})
+```
+</select>
+:::
+:::
+
+::: {.mode-toggles}
+<button type="button" class="mode-btn active" id="btnSplit" onclick="setMode('split')">Split Slider</button>
+<button type="button" class="mode-btn" id="btnDiff" onclick="setMode('diff')">Difference Map</button>
+<button type="button" class="mode-btn" id="btnSide" onclick="setMode('side')">Side-by-Side</button>
+<button type="button" class="mode-btn" id="btnRandom" onclick="randomize()">Random Pair</button>
+:::
+:::
+
+::: {#stage class="viewer-stage"}
+<!-- Split Slider Mode -->
+::: {#splitViewer class="split-viewer"}
+::: {.split-layer .split-bottom}
+<img id="splitImgBottom" class="split-img" src="" alt="Album B">
+:::
+::: {#splitTop class="split-layer split-top"}
+<img id="splitImgTop" class="split-img" src="" alt="Album A">
+:::
+<div id="sliderHandle" class="slider-handle">&#9668; &#9658;</div>
+<input type="range" id="splitRange" class="range-input" min="0" max="100" value="50" oninput="updateSplit(this.value)">
+:::
+
+<!-- Difference Mode -->
+::: {#diffViewer class="diff-viewer"}
+<img id="diffImgBase" class="diff-img-base" src="" alt="Base">
+<img id="diffImgOverlay" class="diff-img-overlay" src="" alt="Difference Overlay">
+:::
+
+<!-- Side-by-Side Mode -->
+::: {#sideViewer class="side-viewer"}
+<img id="sideImgA" src="" alt="Album A">
+<img id="sideImgB" src="" alt="Album B">
+:::
+:::
+
+::: {.palette-container}
+::: {.palette-card}
+<div id="paletteTitleA" class="palette-title">Cover A Palette</div>
+<div id="paletteSwatchesA" class="swatch-row"></div>
+:::
+::: {.palette-card}
+<div id="paletteTitleB" class="palette-title">Cover B Palette</div>
+<div id="paletteSwatchesB" class="swatch-row"></div>
+:::
+:::
+
+::: {.analysis-card}
+### Similarities & Differences
+::: {.analysis-grid}
+::: {.analysis-col}
+<div class="analysis-col-title sim">
+  <span>&#10004;</span> <strong>Similarities</strong>
+</div>
+<ul id="analysisSimilarities" class="analysis-list">
+  <li>Loading similarities...</li>
+</ul>
+:::
+
+::: {.analysis-col}
+<div class="analysis-col-title diff">
+  <span>&#10008;</span> <strong>Differences</strong>
+</div>
+<ul id="analysisDifferences" class="analysis-list">
+  <li>Loading differences...</li>
+</ul>
+:::
+:::
+:::
+
+<canvas id="colorCanvas" width="50" height="50" style="display:none;"></canvas>
+<canvas id="analysisCanvasA" width="32" height="32" style="display:none;"></canvas>
+<canvas id="analysisCanvasB" width="32" height="32" style="display:none;"></canvas>
+
+```{=html}
+<script>
+let currentMode = 'split';
+
+function updateCovers() {
+  const fileA = document.getElementById('selectA').value;
+  const fileB = document.getElementById('selectB').value;
+  const pathA = 'data/' + fileA;
+  const pathB = 'data/' + fileB;
+
+  // Split view images
+  document.getElementById('splitImgTop').src = pathA;
+  document.getElementById('splitImgBottom').src = pathB;
+
+  // Difference view images
+  document.getElementById('diffImgBase').src = pathA;
+  document.getElementById('diffImgOverlay').src = pathB;
+
+  // Side view images
+  document.getElementById('sideImgA').src = pathA;
+  document.getElementById('sideImgB').src = pathB;
+
+  // Extract color palettes
+  extractPalette(pathA, 'paletteSwatchesA', 'paletteTitleA', 'selectA');
+  extractPalette(pathB, 'paletteSwatchesB', 'paletteTitleB', 'selectB');
+
+  // Describe similarities and differences
+  runAnalysis(pathA, pathB, fileA, fileB);
+}
+
+function updateSplit(pct) {
+  document.getElementById('splitTop').style.width = pct + '%';
+  document.getElementById('sliderHandle').style.left = pct + '%';
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('splitViewer').style.display = mode === 'split' ? 'block' : 'none';
+  document.getElementById('diffViewer').style.display = mode === 'diff' ? 'block' : 'none';
+  document.getElementById('sideViewer').style.display = mode === 'side' ? 'grid' : 'none';
+
+  ['btnSplit', 'btnDiff', 'btnSide'].forEach(id => {
+    document.getElementById(id).classList.remove('active');
+  });
+
+  if (mode === 'split') document.getElementById('btnSplit').classList.add('active');
+  if (mode === 'diff') document.getElementById('btnDiff').classList.add('active');
+  if (mode === 'side') document.getElementById('btnSide').classList.add('active');
+}
+
+function randomize() {
+  const selA = document.getElementById('selectA');
+  const selB = document.getElementById('selectB');
+  const count = selA.options.length;
+  if (count < 2) return;
+
+  const idxA = Math.floor(Math.random() * count);
+  let idxB = Math.floor(Math.random() * count);
+  while (idxB === idxA) {
+    idxB = Math.floor(Math.random() * count);
+  }
+
+  selA.selectedIndex = idxA;
+  selB.selectedIndex = idxB;
+  updateCovers();
+}
+
+function extractPalette(src, targetRowId, titleId, selectId) {
+  const sel = document.getElementById(selectId);
+  const label = sel.options[sel.selectedIndex].text;
+  document.getElementById(titleId).textContent = label;
+
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = src;
+  img.onload = function() {
+    const canvas = document.getElementById('colorCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, 30, 30);
+    const data = ctx.getImageData(0, 0, 30, 30).data;
+
+    // Sample 5 representative colors across the cover
+    const coords = [[5,5], [15,8], [15,15], [22,20], [25,25]];
+    const swatches = coords.map(([x, y]) => {
+      const idx = (y * 30 + x) * 4;
+      const r = data[idx], g = data[idx+1], b = data[idx+2];
+      return `rgb(${r},${g},${b})`;
+    });
+
+    const row = document.getElementById(targetRowId);
+    row.innerHTML = swatches.map(c => 
+      `<div class="swatch" style="background-color: ${c};" title="${c}"></div>`
+    ).join('');
+  };
+}
+
+function runAnalysis(pathA, pathB, fileA, fileB) {
+  const selA = document.getElementById('selectA');
+  const selB = document.getElementById('selectB');
+  const labelA = selA.options[selA.selectedIndex].text;
+  const labelB = selB.options[selB.selectedIndex].text;
+
+  // Extract artist name
+  const artistA = labelA.includes(' - ') ? labelA.split(' - ')[0] : labelA.split(' ')[0];
+  const artistB = labelB.includes(' - ') ? labelB.split(' - ')[0] : labelB.split(' ')[0];
+
+  const imgA = new Image();
+  const imgB = new Image();
+  imgA.crossOrigin = "anonymous";
+  imgB.crossOrigin = "anonymous";
+
+  let loadedA = false, loadedB = false;
+
+  function evaluate() {
+    if (!loadedA || !loadedB) return;
+
+    const canvasA = document.getElementById('analysisCanvasA');
+    const ctxA = canvasA.getContext('2d');
+    ctxA.drawImage(imgA, 0, 0, 32, 32);
+    const dataA = ctxA.getImageData(0, 0, 32, 32).data;
+
+    const canvasB = document.getElementById('analysisCanvasB');
+    const ctxB = canvasB.getContext('2d');
+    ctxB.drawImage(imgB, 0, 0, 32, 32);
+    const dataB = ctxB.getImageData(0, 0, 32, 32).data;
+
+    let lumA = 0, lumB = 0;
+    let satA = 0, satB = 0;
+    let warmA = 0, warmB = 0;
+    let pixelDiff = 0;
+    let centerLumA = 0, centerLumB = 0, centerCount = 0;
+    let borderLumA = 0, borderLumB = 0, borderCount = 0;
+    const lumArrA = [], lumArrB = [];
+    const n = 32 * 32;
+
+    for (let y = 0; y < 32; y++) {
+      for (let x = 0; x < 32; x++) {
+        const i = (y * 32 + x) * 4;
+        const rA = dataA[i], gA = dataA[i+1], bA = dataA[i+2];
+        const rB = dataB[i], gB = dataB[i+1], bB = dataB[i+2];
+
+        const lA = (0.299*rA + 0.587*gA + 0.114*bA) / 255;
+        const lB = (0.299*rB + 0.587*gB + 0.114*bB) / 255;
+        lumA += lA; lumB += lB;
+        lumArrA.push(lA); lumArrB.push(lB);
+
+        if (x >= 8 && x < 24 && y >= 8 && y < 24) {
+          centerLumA += lA; centerLumB += lB; centerCount++;
+        } else {
+          borderLumA += lA; borderLumB += lB; borderCount++;
+        }
+
+        const maxA = Math.max(rA, gA, bA), minA = Math.min(rA, gA, bA);
+        satA += maxA === 0 ? 0 : (maxA - minA) / maxA;
+
+        const maxB = Math.max(rB, gB, bB), minB = Math.min(rB, gB, bB);
+        satB += maxB === 0 ? 0 : (maxB - minB) / maxB;
+
+        warmA += (rA - bA) / 255;
+        warmB += (rB - bB) / 255;
+
+        pixelDiff += (Math.abs(rA - rB) + Math.abs(gA - gB) + Math.abs(bA - bB)) / (3 * 255);
+      }
+    }
+
+    lumA /= n; lumB /= n;
+    satA /= n; satB /= n;
+    warmA /= n; warmB /= n;
+    pixelDiff /= n;
+    centerLumA /= centerCount; centerLumB /= centerCount;
+    borderLumA /= borderCount; borderLumB /= borderCount;
+
+    let varA = 0, varB = 0;
+    for (let k = 0; k < n; k++) {
+      varA += Math.pow(lumArrA[k] - lumA, 2);
+      varB += Math.pow(lumArrB[k] - lumB, 2);
+    }
+    const stdA = Math.sqrt(varA / n);
+    const stdB = Math.sqrt(varB / n);
+
+    const similarities = [];
+    const differences = [];
+
+    // 1. Compositional Structure
+    const centerFocusA = Math.abs(centerLumA - borderLumA) > 0.06;
+    const centerFocusB = Math.abs(centerLumB - borderLumB) > 0.06;
+    if (centerFocusA && centerFocusB) {
+      similarities.push("<strong>Focal Composition:</strong> Both artworks prioritize a distinct central subject or emblem, leaving outer borders less cluttered to guide direct visual focus.");
+    } else if (!centerFocusA && !centerFocusB) {
+      similarities.push("<strong>Spatial Treatment:</strong> Both covers utilize full-bleed, edge-to-edge imagery without vignette borders, creating an expansive, immersive visual scene.");
+    } else {
+      similarities.push("<strong>Visual Framing:</strong> Both compositions feature deliberate structural grounding, ensuring key graphic elements remain clear and identifiable at any display scale.");
+    }
+
+    // 2. Tonal Mood & Atmosphere
+    const lumDiff = Math.abs(lumA - lumB);
+    if (lumDiff < 0.20) {
+      if (lumA < 0.35) {
+        similarities.push("<strong>Atmospheric Mood:</strong> Both pieces lean into a low-key, shadowy aesthetic dominated by deep blacks and muted backgrounds, evoking an introspective, moody tone.");
+      } else if (lumA > 0.60) {
+        similarities.push("<strong>High-Key Lighting:</strong> Both compositions feature bright, luminous lighting and light background fields, conveying an open and polished aesthetic.");
+      } else {
+        similarities.push("<strong>Tonal Balance:</strong> Both covers maintain a balanced mid-tone exposure with natural lighting, favoring organic visual realism over harsh contrast extremes.");
+      }
+    } else {
+      const brighter = lumA > lumB ? "Cover A" : "Cover B";
+      const darker = lumA > lumB ? "Cover B" : "Cover A";
+      differences.push(`<strong>Exposure & Luminance:</strong> <strong>${brighter}</strong> has a significantly brighter, high-key exposure, whereas <strong>${darker}</strong> is noticeably darker and shadow-heavy.`);
+    }
+
+    // 3. Dynamic Contrast & Chiaroscuro
+    if (stdA > 0.20 && stdB > 0.20) {
+      similarities.push("<strong>Dynamic Contrast:</strong> Both utilize punchy contrast between dark shadows and highlights, giving the typography and imagery high visual impact.");
+    } else if (stdA <= 0.20 && stdB <= 0.20) {
+      similarities.push("<strong>Harmonic Gradation:</strong> Both rely on smooth, subtle tonal transitions rather than stark edge cutoffs, creating a cohesive, painterly texture.");
+    }
+
+    // 4. Chromatic Palette & Temperature
+    const satDiff = Math.abs(satA - satB);
+    if (satDiff < 0.20) {
+      if (satA < 0.22) {
+        similarities.push("<strong>Monochromatic Restraint:</strong> Both embrace a restrained, near-monochromatic color scheme, allowing form, typography, and silhouette to lead over bright pigment.");
+      } else {
+        similarities.push("<strong>Chromatic Vibrancy:</strong> Both incorporate rich, saturated color accents that draw viewer attention to primary focal details.");
+      }
+    } else {
+      const vibrant = satA > satB ? "Cover A" : "Cover B";
+      const muted = satA > satB ? "Cover B" : "Cover A";
+      differences.push(`<strong>Color Saturation:</strong> <strong>${vibrant}</strong> is richly saturated and colorful, while <strong>${muted}</strong> leans into muted, desaturated tones.`);
+    }
+
+    const warmDiff = Math.abs(warmA - warmB);
+    if (warmDiff < 0.16) {
+      const tempDesc = warmA > 0.05 ? "warm ambers, golds, and reds" : (warmA < -0.05 ? "cool blues, slates, and neutrals" : "balanced neutral greys");
+      similarities.push(`<strong>Color Temperature:</strong> Both covers share a cohesive color cast dominated by <em>${tempDesc}</em>, establishing atmospheric synergy.`);
+    } else {
+      const warmer = warmA > warmB ? "Cover A" : "Cover B";
+      const cooler = warmA > warmB ? "Cover B" : "Cover A";
+      differences.push(`<strong>Color Temperature Cast:</strong> <strong>${warmer}</strong> has a noticeably warmer color cast, while <strong>${cooler}</strong> leans distinctly cooler in hue.`);
+    }
+
+    // 5. Artist Continuity or Visual Identity
+    if (artistA.toLowerCase() === artistB.toLowerCase()) {
+      similarities.push(`<strong>Catalog Continuity:</strong> Both releases belong to <strong>${artistA}</strong>'s discography, showcasing stylistic continuity and branding evolution.`);
+    } else {
+      differences.push(`<strong>Visual Identity:</strong> Distinct artistic styles representing <strong>${artistA}</strong> vs. <strong>${artistB}</strong> from different creative traditions.`);
+    }
+
+    // 6. Overall Pixel Divergence Metric
+    const divergencePct = Math.min(100, Math.round(pixelDiff * 100));
+    differences.push(`<strong>Structural Divergence:</strong> Approximately <strong>${divergencePct}%</strong> structural and chromatic variation across the pixel field.`);
+
+    // Render lists
+    document.getElementById('analysisSimilarities').innerHTML = similarities.map(s => `<li>${s}</li>`).join('');
+    document.getElementById('analysisDifferences').innerHTML = differences.map(d => `<li>${d}</li>`).join('');
+  }
+
+  imgA.onload = () => { loadedA = true; evaluate(); };
+  imgB.onload = () => { loadedB = true; evaluate(); };
+  imgA.src = pathA;
+  imgB.src = pathB;
+}
+
+document.getElementById('selectA').addEventListener('change', updateCovers);
+document.getElementById('selectB').addEventListener('change', updateCovers);
+
+// Ensure stage image dimensions adjust dynamically
+function syncDimensions() {
+  const stage = document.getElementById('stage');
+  const w = stage.clientWidth;
+  document.getElementById('splitImgTop').style.width = w + 'px';
+  document.getElementById('splitImgTop').style.height = w + 'px';
+}
+
+window.addEventListener('resize', syncDimensions);
+document.addEventListener('DOMContentLoaded', () => {
+  updateCovers();
+  syncDimensions();
+});
+updateCovers();
+syncDimensions();
+</script>
+```

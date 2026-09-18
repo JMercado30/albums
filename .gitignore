@@ -1,2 +1,10 @@
 /.quarto/
+/_site/
+/_freeze/
 **/*.quarto_ipynb
+
+# R and system files
+.Rhistory
+.RData
+.Rproj.user/
+.DS_Store

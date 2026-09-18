@@ -2,4 +2,4 @@
 title: "About"
 ---
 
-About this site
+This website compares album covers across different musical artists and eras. By analyzing cover art from artists such as The Beatles, Queen, Michael Jackson, and Madonna, the project explores visual styles, recurring design themes, and how album aesthetics have evolved over time.
