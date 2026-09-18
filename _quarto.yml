@@ -4,7 +4,7 @@ project:
     - "data/"
 
 website:
-  title: "y"
+  title: "Album Cover Comparisons"
   navbar:
     left:
       - href: index.qmd

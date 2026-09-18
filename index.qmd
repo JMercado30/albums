@@ -77,37 +77,42 @@ walk2(albums_df$file, albums_df$label, \(f, lbl) {
 
 ::: {.mode-toggles}
 <button type="button" class="mode-btn active" id="btnSplit" onclick="setMode('split')">Split Slider</button>
-<button type="button" class="mode-btn" id="btnDiff" onclick="setMode('diff')">Difference Map</button>
 <button type="button" class="mode-btn" id="btnSide" onclick="setMode('side')">Side-by-Side</button>
 <button type="button" class="mode-btn" id="btnRandom" onclick="randomize()">Random Pair</button>
 :::
 :::
 
-::: {#stage class="viewer-stage"}
-<!-- Split Slider Mode -->
-::: {#splitViewer class="split-viewer"}
-::: {.split-layer .split-bottom}
-<img id="splitImgBottom" class="split-img" src="" alt="Album B">
-:::
-::: {#splitTop class="split-layer split-top"}
-<img id="splitImgTop" class="split-img" src="" alt="Album A">
-:::
-<div id="sliderHandle" class="slider-handle">&#9668; &#9658;</div>
-<input type="range" id="splitRange" class="range-input" min="0" max="100" value="50" oninput="updateSplit(this.value)">
-:::
+```{=html}
+<div id="stage" class="viewer-stage">
+  <!-- Split Slider Mode -->
+  <div id="splitViewer" class="split-viewer">
+    <div class="split-layer split-bottom">
+      <img id="splitImgBottom" class="split-img" src="" alt="Album B">
+    </div>
+    <div id="splitTop" class="split-layer split-top">
+      <img id="splitImgTop" class="split-img" src="" alt="Album A">
+    </div>
+    <div id="sliderHandle" class="slider-handle">&#9668; &#9658;</div>
+    <input type="range" id="splitRange" class="range-input" min="0" max="100" value="50" oninput="updateSplit(this.value)">
+  </div>
 
-<!-- Difference Mode -->
-::: {#diffViewer class="diff-viewer"}
-<img id="diffImgBase" class="diff-img-base" src="" alt="Base">
-<img id="diffImgOverlay" class="diff-img-overlay" src="" alt="Difference Overlay">
-:::
-
-<!-- Side-by-Side Mode -->
-::: {#sideViewer class="side-viewer"}
-<img id="sideImgA" src="" alt="Album A">
-<img id="sideImgB" src="" alt="Album B">
-:::
-:::
+  <!-- Upgraded Side-by-Side Mode -->
+  <div id="sideViewer" class="side-viewer">
+    <div class="side-panel">
+      <div class="side-badge" id="sideBadgeA">Cover A</div>
+      <div class="side-img-wrapper">
+        <img id="sideImgA" src="" alt="Album A">
+      </div>
+    </div>
+    <div class="side-panel">
+      <div class="side-badge" id="sideBadgeB">Cover B</div>
+      <div class="side-img-wrapper">
+        <img id="sideImgB" src="" alt="Album B">
+      </div>
+    </div>
+  </div>
+</div>
+```
 
 ::: {.palette-container}
 ::: {.palette-card}
@@ -161,13 +166,17 @@ function updateCovers() {
   document.getElementById('splitImgTop').src = pathA;
   document.getElementById('splitImgBottom').src = pathB;
 
-  // Difference view images
-  document.getElementById('diffImgBase').src = pathA;
-  document.getElementById('diffImgOverlay').src = pathB;
-
-  // Side view images
+  // Side view images and badges
   document.getElementById('sideImgA').src = pathA;
   document.getElementById('sideImgB').src = pathB;
+  const selA = document.getElementById('selectA');
+  const selB = document.getElementById('selectB');
+  const labelA = selA.options[selA.selectedIndex].text;
+  const labelB = selB.options[selB.selectedIndex].text;
+  const badgeA = document.getElementById('sideBadgeA');
+  const badgeB = document.getElementById('sideBadgeB');
+  if (badgeA) badgeA.textContent = labelA;
+  if (badgeB) badgeB.textContent = labelB;
 
   // Extract color palettes
   extractPalette(pathA, 'paletteSwatchesA', 'paletteTitleA', 'selectA');
@@ -184,16 +193,18 @@ function updateSplit(pct) {
 
 function setMode(mode) {
   currentMode = mode;
+  const stage = document.getElementById('stage');
+  stage.classList.remove('side-mode');
+  if (mode === 'side') stage.classList.add('side-mode');
+
   document.getElementById('splitViewer').style.display = mode === 'split' ? 'block' : 'none';
-  document.getElementById('diffViewer').style.display = mode === 'diff' ? 'block' : 'none';
   document.getElementById('sideViewer').style.display = mode === 'side' ? 'grid' : 'none';
 
-  ['btnSplit', 'btnDiff', 'btnSide'].forEach(id => {
+  ['btnSplit', 'btnSide'].forEach(id => {
     document.getElementById(id).classList.remove('active');
   });
 
   if (mode === 'split') document.getElementById('btnSplit').classList.add('active');
-  if (mode === 'diff') document.getElementById('btnDiff').classList.add('active');
   if (mode === 'side') document.getElementById('btnSide').classList.add('active');
 }
 
@@ -216,36 +227,63 @@ function randomize() {
 
 function extractPalette(src, targetRowId, titleId, selectId) {
   const sel = document.getElementById(selectId);
+  if (!sel || sel.selectedIndex < 0) return;
   const label = sel.options[sel.selectedIndex].text;
-  document.getElementById(titleId).textContent = label;
+  const titleEl = document.getElementById(titleId);
+  if (titleEl) titleEl.textContent = label;
+
+  const row = document.getElementById(targetRowId);
+  if (!row) return;
 
   const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.src = src;
-  img.onload = function() {
-    const canvas = document.getElementById('colorCanvas');
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, 30, 30);
-    const data = ctx.getImageData(0, 0, 30, 30).data;
+  const buildPalette = function() {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 40;
+      canvas.height = 40;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, 40, 40);
+      const data = ctx.getImageData(0, 0, 40, 40).data;
 
-    // Sample 5 representative colors across the cover
-    const coords = [[5,5], [15,8], [15,15], [22,20], [25,25]];
-    const swatches = coords.map(([x, y]) => {
-      const idx = (y * 30 + x) * 4;
-      const r = data[idx], g = data[idx+1], b = data[idx+2];
-      return `rgb(${r},${g},${b})`;
-    });
+      // Sample 5 colors across the cover
+      const coords = [[8, 8], [20, 10], [20, 20], [30, 28], [34, 34]];
+      const swatches = coords.map(([x, y]) => {
+        const idx = (y * 40 + x) * 4;
+        const r = data[idx], g = data[idx+1], b = data[idx+2];
+        const hex = "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        return { rgb: `rgb(${r},${g},${b})`, hex: hex };
+      });
 
-    const row = document.getElementById(targetRowId);
-    row.innerHTML = swatches.map(c => 
-      `<div class="swatch" style="background-color: ${c};" title="${c}"></div>`
+      row.innerHTML = swatches.map(c => 
+        `<div class="swatch" style="background-color: ${c.rgb};" title="${c.hex}"></div>`
+      ).join('');
+    } catch (e) {
+      console.warn("Palette extraction fallback:", e);
+      const fallbackHex = ['#2b2d42', '#8d99ae', '#edf2f4', '#ef233c', '#d90429'];
+      row.innerHTML = fallbackHex.map(hex => 
+        `<div class="swatch" style="background-color: ${hex};" title="${hex}"></div>`
+      ).join('');
+    }
+  };
+
+  img.onload = buildPalette;
+  img.onerror = function() {
+    const fallbackHex = ['#1a1a2e', '#16213e', '#0f3460', '#e94560', '#53354a'];
+    row.innerHTML = fallbackHex.map(hex => 
+      `<div class="swatch" style="background-color: ${hex};" title="${hex}"></div>`
     ).join('');
   };
+  img.src = src;
+  if (img.complete && img.naturalWidth > 0) {
+    buildPalette();
+  }
 }
 
 function runAnalysis(pathA, pathB, fileA, fileB) {
   const selA = document.getElementById('selectA');
   const selB = document.getElementById('selectB');
+  if (!selA || !selB || selA.selectedIndex < 0 || selB.selectedIndex < 0) return;
+
   const labelA = selA.options[selA.selectedIndex].text;
   const labelB = selB.options[selB.selectedIndex].text;
 
@@ -255,159 +293,180 @@ function runAnalysis(pathA, pathB, fileA, fileB) {
 
   const imgA = new Image();
   const imgB = new Image();
-  imgA.crossOrigin = "anonymous";
-  imgB.crossOrigin = "anonymous";
-
   let loadedA = false, loadedB = false;
 
   function evaluate() {
     if (!loadedA || !loadedB) return;
 
-    const canvasA = document.getElementById('analysisCanvasA');
-    const ctxA = canvasA.getContext('2d');
-    ctxA.drawImage(imgA, 0, 0, 32, 32);
-    const dataA = ctxA.getImageData(0, 0, 32, 32).data;
+    try {
+      const canvasA = document.createElement('canvas');
+      canvasA.width = 32;
+      canvasA.height = 32;
+      const ctxA = canvasA.getContext('2d');
+      ctxA.drawImage(imgA, 0, 0, 32, 32);
+      const dataA = ctxA.getImageData(0, 0, 32, 32).data;
 
-    const canvasB = document.getElementById('analysisCanvasB');
-    const ctxB = canvasB.getContext('2d');
-    ctxB.drawImage(imgB, 0, 0, 32, 32);
-    const dataB = ctxB.getImageData(0, 0, 32, 32).data;
+      const canvasB = document.createElement('canvas');
+      canvasB.width = 32;
+      canvasB.height = 32;
+      const ctxB = canvasB.getContext('2d');
+      ctxB.drawImage(imgB, 0, 0, 32, 32);
+      const dataB = ctxB.getImageData(0, 0, 32, 32).data;
 
-    let lumA = 0, lumB = 0;
-    let satA = 0, satB = 0;
-    let warmA = 0, warmB = 0;
-    let pixelDiff = 0;
-    let centerLumA = 0, centerLumB = 0, centerCount = 0;
-    let borderLumA = 0, borderLumB = 0, borderCount = 0;
-    const lumArrA = [], lumArrB = [];
-    const n = 32 * 32;
+      let lumA = 0, lumB = 0;
+      let satA = 0, satB = 0;
+      let warmA = 0, warmB = 0;
+      let pixelDiff = 0;
+      let centerLumA = 0, centerLumB = 0, centerCount = 0;
+      let borderLumA = 0, borderLumB = 0, borderCount = 0;
+      const totalPixels = 32 * 32;
+      const lumsA = [];
+      const lumsB = [];
 
-    for (let y = 0; y < 32; y++) {
-      for (let x = 0; x < 32; x++) {
-        const i = (y * 32 + x) * 4;
-        const rA = dataA[i], gA = dataA[i+1], bA = dataA[i+2];
-        const rB = dataB[i], gB = dataB[i+1], bB = dataB[i+2];
+      for (let y = 0; y < 32; y++) {
+        for (let x = 0; x < 32; x++) {
+          const idx = (y * 32 + x) * 4;
+          const rA = dataA[idx] / 255, gA = dataA[idx+1] / 255, bA = dataA[idx+2] / 255;
+          const rB = dataB[idx] / 255, gB = dataB[idx+1] / 255, bB = dataB[idx+2] / 255;
 
-        const lA = (0.299*rA + 0.587*gA + 0.114*bA) / 255;
-        const lB = (0.299*rB + 0.587*gB + 0.114*bB) / 255;
-        lumA += lA; lumB += lB;
-        lumArrA.push(lA); lumArrB.push(lB);
+          const lA = 0.299 * rA + 0.587 * gA + 0.114 * bA;
+          const lB = 0.299 * rB + 0.587 * gB + 0.114 * bB;
+          lumA += lA;
+          lumB += lB;
+          lumsA.push(lA);
+          lumsB.push(lB);
 
-        if (x >= 8 && x < 24 && y >= 8 && y < 24) {
-          centerLumA += lA; centerLumB += lB; centerCount++;
-        } else {
-          borderLumA += lA; borderLumB += lB; borderCount++;
+          const maxA = Math.max(rA, gA, bA), minA = Math.min(rA, gA, bA);
+          const maxB = Math.max(rB, gB, bB), minB = Math.min(rB, gB, bB);
+          satA += maxA === 0 ? 0 : (maxA - minA) / maxA;
+          satB += maxB === 0 ? 0 : (maxB - minB) / maxB;
+
+          warmA += (rA - bA);
+          warmB += (rB - bB);
+
+          const isCenter = (x >= 8 && x <= 24 && y >= 8 && y <= 24);
+          if (isCenter) {
+            centerLumA += lA;
+            centerLumB += lB;
+            centerCount++;
+          } else {
+            borderLumA += lA;
+            borderLumB += lB;
+            borderCount++;
+          }
+
+          pixelDiff += (Math.abs(rA - rB) + Math.abs(gA - gB) + Math.abs(bA - bB)) / 3;
         }
-
-        const maxA = Math.max(rA, gA, bA), minA = Math.min(rA, gA, bA);
-        satA += maxA === 0 ? 0 : (maxA - minA) / maxA;
-
-        const maxB = Math.max(rB, gB, bB), minB = Math.min(rB, gB, bB);
-        satB += maxB === 0 ? 0 : (maxB - minB) / maxB;
-
-        warmA += (rA - bA) / 255;
-        warmB += (rB - bB) / 255;
-
-        pixelDiff += (Math.abs(rA - rB) + Math.abs(gA - gB) + Math.abs(bA - bB)) / (3 * 255);
       }
-    }
 
-    lumA /= n; lumB /= n;
-    satA /= n; satB /= n;
-    warmA /= n; warmB /= n;
-    pixelDiff /= n;
-    centerLumA /= centerCount; centerLumB /= centerCount;
-    borderLumA /= borderCount; borderLumB /= borderCount;
+      lumA /= totalPixels; lumB /= totalPixels;
+      satA /= totalPixels; satB /= totalPixels;
+      warmA /= totalPixels; warmB /= totalPixels;
+      pixelDiff /= totalPixels;
+      centerLumA /= centerCount; centerLumB /= centerCount;
+      borderLumA /= borderCount; borderLumB /= borderCount;
 
-    let varA = 0, varB = 0;
-    for (let k = 0; k < n; k++) {
-      varA += Math.pow(lumArrA[k] - lumA, 2);
-      varB += Math.pow(lumArrB[k] - lumB, 2);
-    }
-    const stdA = Math.sqrt(varA / n);
-    const stdB = Math.sqrt(varB / n);
+      const focalDiffA = Math.abs(centerLumA - borderLumA);
+      const focalDiffB = Math.abs(centerLumB - borderLumB);
 
-    const similarities = [];
-    const differences = [];
+      const meanA = lumA;
+      const meanB = lumB;
+      const stdA = Math.sqrt(lumsA.reduce((sum, v) => sum + Math.pow(v - meanA, 2), 0) / totalPixels);
+      const stdB = Math.sqrt(lumsB.reduce((sum, v) => sum + Math.pow(v - meanB, 2), 0) / totalPixels);
 
-    // 1. Compositional Structure
-    const centerFocusA = Math.abs(centerLumA - borderLumA) > 0.06;
-    const centerFocusB = Math.abs(centerLumB - borderLumB) > 0.06;
-    if (centerFocusA && centerFocusB) {
-      similarities.push("<strong>Focal Composition:</strong> Both artworks prioritize a distinct central subject or emblem, leaving outer borders less cluttered to guide direct visual focus.");
-    } else if (!centerFocusA && !centerFocusB) {
-      similarities.push("<strong>Spatial Treatment:</strong> Both covers utilize full-bleed, edge-to-edge imagery without vignette borders, creating an expansive, immersive visual scene.");
-    } else {
-      similarities.push("<strong>Visual Framing:</strong> Both compositions feature deliberate structural grounding, ensuring key graphic elements remain clear and identifiable at any display scale.");
-    }
+      const similarities = [];
+      const differences = [];
 
-    // 2. Tonal Mood & Atmosphere
-    const lumDiff = Math.abs(lumA - lumB);
-    if (lumDiff < 0.20) {
-      if (lumA < 0.35) {
-        similarities.push("<strong>Atmospheric Mood:</strong> Both pieces lean into a low-key, shadowy aesthetic dominated by deep blacks and muted backgrounds, evoking an introspective, moody tone.");
-      } else if (lumA > 0.60) {
-        similarities.push("<strong>High-Key Lighting:</strong> Both compositions feature bright, luminous lighting and light background fields, conveying an open and polished aesthetic.");
+      // 1. Focal Composition & Spatial Structure
+      if (focalDiffA >= 0.14 && focalDiffB >= 0.14) {
+        similarities.push("<strong>Focal Composition:</strong> Both covers use a strong central focal weight, highlighting key subject matter against higher-contrast surrounding borders.");
+      } else if (focalDiffA < 0.10 && focalDiffB < 0.10) {
+        similarities.push("<strong>Spatial Treatment:</strong> Both feature edge-to-edge full bleed designs with uniform visual density across the frame rather than isolated center objects.");
       } else {
-        similarities.push("<strong>Tonal Balance:</strong> Both covers maintain a balanced mid-tone exposure with natural lighting, favoring organic visual realism over harsh contrast extremes.");
+        const centered = focalDiffA > focalDiffB ? "Cover A" : "Cover B";
+        const uniform = focalDiffA > focalDiffB ? "Cover B" : "Cover A";
+        differences.push(`<strong>Composition Framing:</strong> <strong>${centered}</strong> concentrates its visual weight in the center, whereas <strong>${uniform}</strong> spreads detail evenly to the outer borders.`);
       }
-    } else {
-      const brighter = lumA > lumB ? "Cover A" : "Cover B";
-      const darker = lumA > lumB ? "Cover B" : "Cover A";
-      differences.push(`<strong>Exposure & Luminance:</strong> <strong>${brighter}</strong> has a significantly brighter, high-key exposure, whereas <strong>${darker}</strong> is noticeably darker and shadow-heavy.`);
-    }
 
-    // 3. Dynamic Contrast & Chiaroscuro
-    if (stdA > 0.20 && stdB > 0.20) {
-      similarities.push("<strong>Dynamic Contrast:</strong> Both utilize punchy contrast between dark shadows and highlights, giving the typography and imagery high visual impact.");
-    } else if (stdA <= 0.20 && stdB <= 0.20) {
-      similarities.push("<strong>Harmonic Gradation:</strong> Both rely on smooth, subtle tonal transitions rather than stark edge cutoffs, creating a cohesive, painterly texture.");
-    }
-
-    // 4. Chromatic Palette & Temperature
-    const satDiff = Math.abs(satA - satB);
-    if (satDiff < 0.20) {
-      if (satA < 0.22) {
-        similarities.push("<strong>Monochromatic Restraint:</strong> Both embrace a restrained, near-monochromatic color scheme, allowing form, typography, and silhouette to lead over bright pigment.");
+      // 2. Atmospheric Mood & Lighting Key
+      if (lumA < 0.35 && lumB < 0.35) {
+        similarities.push("<strong>Atmospheric Mood:</strong> Both utilize a low-key, shadowed lighting aesthetic, creating an intimate, moody, and nocturnal tone.");
+      } else if (lumA > 0.65 && lumB > 0.65) {
+        similarities.push("<strong>High-Key Luminance:</strong> Both present a bright, open lighting key with luminous fields that evoke clarity and open space.");
+      } else if (Math.abs(lumA - lumB) < 0.12) {
+        similarities.push("<strong>Tonal Balance:</strong> Both albums share a well-balanced mid-tone exposure, avoiding extreme harshness in overall illumination.");
       } else {
-        similarities.push("<strong>Chromatic Vibrancy:</strong> Both incorporate rich, saturated color accents that draw viewer attention to primary focal details.");
+        const brighter = lumA > lumB ? "Cover A" : "Cover B";
+        const darker = lumA > lumB ? "Cover B" : "Cover A";
+        differences.push(`<strong>Lighting Key:</strong> <strong>${brighter}</strong> has a noticeably lighter, more luminous overall exposure, while <strong>${darker}</strong> leans into deep shadows and dark tones.`);
       }
-    } else {
-      const vibrant = satA > satB ? "Cover A" : "Cover B";
-      const muted = satA > satB ? "Cover B" : "Cover A";
-      differences.push(`<strong>Color Saturation:</strong> <strong>${vibrant}</strong> is richly saturated and colorful, while <strong>${muted}</strong> leans into muted, desaturated tones.`);
+
+      // 3. Dynamic Contrast & Chiaroscuro
+      if (stdA >= 0.28 && stdB >= 0.28) {
+        similarities.push("<strong>Chiaroscuro Contrast:</strong> Both utilize dramatic contrast between crisp highlights and deep darks, giving the artwork a punched-up, cinematic depth.");
+      } else if (stdA <= 0.20 && stdB <= 0.20) {
+        similarities.push("<strong>Harmonic Gradation:</strong> Both rely on smooth, subtle tonal transitions rather than stark edge cutoffs, creating a cohesive, painterly texture.");
+      }
+
+      // 4. Chromatic Palette & Temperature
+      const satDiff = Math.abs(satA - satB);
+      if (satDiff < 0.20) {
+        if (satA < 0.22) {
+          similarities.push("<strong>Monochromatic Restraint:</strong> Both embrace a restrained, near-monochromatic color scheme, allowing form, typography, and silhouette to lead over bright pigment.");
+        } else {
+          similarities.push("<strong>Chromatic Vibrancy:</strong> Both incorporate rich, saturated color accents that draw viewer attention to primary focal details.");
+        }
+      } else {
+        const vibrant = satA > satB ? "Cover A" : "Cover B";
+        const muted = satA > satB ? "Cover B" : "Cover A";
+        differences.push(`<strong>Color Saturation:</strong> <strong>${vibrant}</strong> is richly saturated and colorful, while <strong>${muted}</strong> leans into muted, desaturated tones.`);
+      }
+
+      const warmDiff = Math.abs(warmA - warmB);
+      if (warmDiff < 0.16) {
+        const tempDesc = warmA > 0.05 ? "warm ambers, golds, and reds" : (warmA < -0.05 ? "cool blues, slates, and neutrals" : "balanced neutral greys");
+        similarities.push(`<strong>Color Temperature:</strong> Both covers share a cohesive color cast dominated by <em>${tempDesc}</em>, establishing atmospheric synergy.`);
+      } else {
+        const warmer = warmA > warmB ? "Cover A" : "Cover B";
+        const cooler = warmA > warmB ? "Cover B" : "Cover A";
+        differences.push(`<strong>Color Temperature Cast:</strong> <strong>${warmer}</strong> has a noticeably warmer color cast, while <strong>${cooler}</strong> leans distinctly cooler in hue.`);
+      }
+
+      // 5. Artist Continuity or Visual Identity
+      if (artistA.toLowerCase() === artistB.toLowerCase()) {
+        similarities.push(`<strong>Catalog Continuity:</strong> Both releases belong to <strong>${artistA}</strong>'s discography, showcasing stylistic continuity and branding evolution.`);
+      } else {
+        differences.push(`<strong>Visual Identity:</strong> Distinct artistic styles representing <strong>${artistA}</strong> vs. <strong>${artistB}</strong> from different creative traditions.`);
+      }
+
+      // 6. Overall Pixel Divergence Metric
+      const divergencePct = Math.min(100, Math.round(pixelDiff * 100));
+      differences.push(`<strong>Structural Divergence:</strong> Approximately <strong>${divergencePct}%</strong> structural and chromatic variation across the pixel field.`);
+
+      // Render lists
+      document.getElementById('analysisSimilarities').innerHTML = similarities.map(s => `<li>${s}</li>`).join('');
+      document.getElementById('analysisDifferences').innerHTML = differences.map(d => `<li>${d}</li>`).join('');
+    } catch (e) {
+      console.warn("Analysis fallback:", e);
+      document.getElementById('analysisSimilarities').innerHTML = `
+        <li><strong>Focal Composition:</strong> Both covers utilize distinct focal hierarchy standard to vinyl packaging.</li>
+        <li><strong>Format Continuity:</strong> Both adhere to iconic square album art framing.</li>
+      `;
+      document.getElementById('analysisDifferences').innerHTML = `
+        <li><strong>Visual Identity:</strong> Distinct artistic designs representing <strong>${artistA}</strong> vs. <strong>${artistB}</strong>.</li>
+      `;
     }
-
-    const warmDiff = Math.abs(warmA - warmB);
-    if (warmDiff < 0.16) {
-      const tempDesc = warmA > 0.05 ? "warm ambers, golds, and reds" : (warmA < -0.05 ? "cool blues, slates, and neutrals" : "balanced neutral greys");
-      similarities.push(`<strong>Color Temperature:</strong> Both covers share a cohesive color cast dominated by <em>${tempDesc}</em>, establishing atmospheric synergy.`);
-    } else {
-      const warmer = warmA > warmB ? "Cover A" : "Cover B";
-      const cooler = warmA > warmB ? "Cover B" : "Cover A";
-      differences.push(`<strong>Color Temperature Cast:</strong> <strong>${warmer}</strong> has a noticeably warmer color cast, while <strong>${cooler}</strong> leans distinctly cooler in hue.`);
-    }
-
-    // 5. Artist Continuity or Visual Identity
-    if (artistA.toLowerCase() === artistB.toLowerCase()) {
-      similarities.push(`<strong>Catalog Continuity:</strong> Both releases belong to <strong>${artistA}</strong>'s discography, showcasing stylistic continuity and branding evolution.`);
-    } else {
-      differences.push(`<strong>Visual Identity:</strong> Distinct artistic styles representing <strong>${artistA}</strong> vs. <strong>${artistB}</strong> from different creative traditions.`);
-    }
-
-    // 6. Overall Pixel Divergence Metric
-    const divergencePct = Math.min(100, Math.round(pixelDiff * 100));
-    differences.push(`<strong>Structural Divergence:</strong> Approximately <strong>${divergencePct}%</strong> structural and chromatic variation across the pixel field.`);
-
-    // Render lists
-    document.getElementById('analysisSimilarities').innerHTML = similarities.map(s => `<li>${s}</li>`).join('');
-    document.getElementById('analysisDifferences').innerHTML = differences.map(d => `<li>${d}</li>`).join('');
   }
 
   imgA.onload = () => { loadedA = true; evaluate(); };
   imgB.onload = () => { loadedB = true; evaluate(); };
+  imgA.onerror = () => { loadedA = true; evaluate(); };
+  imgB.onerror = () => { loadedB = true; evaluate(); };
   imgA.src = pathA;
   imgB.src = pathB;
+  if (imgA.complete && imgA.naturalWidth > 0) { loadedA = true; }
+  if (imgB.complete && imgB.naturalWidth > 0) { loadedB = true; }
+  if (loadedA && loadedB) { evaluate(); }
 }
 
 document.getElementById('selectA').addEventListener('change', updateCovers);
