@@ -28,7 +28,7 @@ albums_df <- tibble(
 )
 ```
 
-Compare any two album covers to see their artistic similarities, composition differences, and color palettes.
+<p class="lead text-muted" style="margin-bottom: 1.25rem; font-size: 1.05rem;">Select any two covers from the catalog to compare composition, lighting key, and chromatic palettes.</p>
 
 ::: {.controls-card}
 ::: {.selector-grid}
